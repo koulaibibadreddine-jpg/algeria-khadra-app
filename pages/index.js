@@ -393,13 +393,30 @@ function PlantModal({ onClose, onSubmit }) {
 function OnboardModal({ onSubmit }) {
   const [name, setName] = useState("");
   const [wilaya, setWilaya] = useState("بسكرة");
+  const nameRef = useRef(null);
+
+  // بعض المتصفحات تملأ الحقل تلقائياً (Autofill) دون إطلاق onChange،
+  // فيبقى state فارغاً رغم ظهور نص في الحقل. نقرأ القيمة الحقيقية من DOM كخط دفاع إضافي.
+  function handleJoin() {
+    const liveValue = (nameRef.current ? nameRef.current.value : "") || name;
+    const finalName = liveValue.trim();
+    if (!finalName) return;
+    onSubmit(finalName, wilaya);
+  }
+
   return (
     <div className="gk-modal-wrap">
       <div className="gk-modal">
         <h3>🌱 مرحباً بك في الجزائر الخضراء</h3>
         <div className="gk-field">
           <label>اسمك</label>
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="مثال: أمين" />
+          <input
+            ref={nameRef}
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onInput={(e) => setName(e.target.value)}
+            placeholder="مثال: أمين"
+          />
         </div>
         <div className="gk-field">
           <label>ولايتك</label>
@@ -407,7 +424,7 @@ function OnboardModal({ onSubmit }) {
             {WILAYAS.map((w) => <option key={w} value={w}>{w}</option>)}
           </select>
         </div>
-        <button className="gk-btn" disabled={!name.trim()} onClick={() => onSubmit(name.trim(), wilaya)}>
+        <button className="gk-btn" onClick={handleJoin}>
           انضم للتحدي <ChevronLeft size={14} style={{ display: "inline", verticalAlign: "-2px" }} />
         </button>
       </div>
