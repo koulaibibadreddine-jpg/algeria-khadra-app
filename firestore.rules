@@ -11,12 +11,15 @@ service cloud.firestore {
     }
 
     // كل الغرسات: يقرأها الجميع، وينشئها فقط صاحب الحساب باسمه، ولا تُعدَّل بعد الإرسال
+    // (moderationStatus يُحدَّد من فحص الصورة في التطبيق نفسه؛ لاحقًا يُفضَّل التحقق منه
+    // أيضًا من طرف خادم/Cloud Function عوض الاكتفاء بفحص جهة العميل فقط)
     match /plantings/{id} {
       allow read: if true;
       allow create: if request.auth != null
                      && request.resource.data.userId == request.auth.uid
                      && request.resource.data.points is int
-                     && request.resource.data.points <= 50;
+                     && request.resource.data.points <= 50
+                     && request.resource.data.moderationStatus in ["approved", "pending_review"];
       allow update, delete: if false;
     }
 
