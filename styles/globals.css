@@ -54,6 +54,7 @@ html, body { margin: 0; padding: 0; }
 .gk-photo-preview{width:100%;height:180px;border-radius:12px;object-fit:cover;margin-bottom:12px;background:var(--line);}
 .gk-camera-box{border:2px dashed var(--leaf-light);border-radius:14px;padding:28px 12px;text-align:center;color:#4a544c;cursor:pointer;margin-bottom:14px;}
 .gk-toast{position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:var(--forest);color:#fff;padding:12px 20px;border-radius:30px;font-size:13px;font-weight:700;z-index:60;box-shadow:0 8px 20px rgba(0,0,0,.25);}
+.gk-credit{text-align:center;font-size:11px;color:#9aa599;padding:18px 12px 4px;}
 .gk-live-card{background:#fff;border:1px solid var(--line);border-radius:16px;overflow:hidden;margin-bottom:16px;max-width:640px;}
 .gk-live-card iframe,.gk-live-card .gk-live-fallback{width:100%;height:220px;border:none;display:block;}
 .gk-live-fallback{background:var(--forest);color:#fff;display:flex;align-items:center;justify-content:center;text-align:center;padding:20px;font-size:13px;flex-direction:column;gap:10px;}
@@ -66,3 +67,36 @@ html, body { margin: 0; padding: 0; }
 @media (min-width: 720px){
   .gk-tabs{max-width:640px;left:50%;transform:translateX(-50%);border-radius:16px 16px 0 0;box-shadow:0 -4px 20px rgba(0,0,0,.08);}
 }
+
+/* === تطويرات: الحساب الحقيقي، GPS، الخريطة، لوحة الأدمن === */
+.gk-account-btn{background:rgba(255,255,255,.12);border:none;color:#fff;border-radius:50%;width:36px;height:36px;display:flex;align-items:center;justify-content:center;cursor:pointer;}
+.gk-banned-notice{margin-top:16px;background:rgba(224,72,58,.15);border:1px solid #e0483a;color:#fff;border-radius:12px;padding:12px 14px;font-size:13px;font-weight:700;display:flex;align-items:center;gap:8px;position:relative;}
+
+.gk-geo-status{font-size:12.5px;border-radius:10px;padding:9px 12px;margin-bottom:14px;font-weight:700;}
+.gk-geo-status.loading{background:#eef1ec;color:#5a655c;}
+.gk-geo-status.ok{background:rgba(76,154,91,.12);color:#2f6b3c;}
+.gk-geo-status.error{background:rgba(163,118,43,.12);color:#a3762b;}
+.gk-geo-status.duplicate{background:rgba(224,72,58,.12);color:#c23a2e;}
+
+.gk-map-wrap{border-radius:16px;overflow:hidden;border:1px solid var(--line);}
+.gk-map{width:100%;height:360px;background:var(--line);}
+
+/* لوحة الأدمن */
+.gk-admin{font-family:'Cairo',sans-serif;direction:rtl;min-height:100vh;background:var(--sand);color:var(--ink);padding-bottom:30px;}
+.gk-admin-header{background:var(--forest);color:#fff;padding:16px 20px;font-weight:800;font-size:17px;display:flex;align-items:center;gap:8px;position:sticky;top:0;z-index:10;}
+.gk-admin-tabs{display:flex;gap:8px;padding:16px 16px 0;flex-wrap:wrap;max-width:720px;margin:0 auto;}
+.gk-admin-tabs button{background:#fff;border:1px solid var(--line);border-radius:20px;padding:8px 14px;font-size:12.5px;font-weight:700;display:flex;align-items:center;gap:6px;cursor:pointer;color:#4a544c;}
+.gk-admin-tabs button.active{background:var(--forest);color:#fff;border-color:var(--forest);}
+.gk-admin-list{padding:16px;max-width:720px;margin:0 auto;}
+.gk-admin-card{display:flex;gap:12px;background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:12px;}
+.gk-admin-card img{width:90px;height:90px;border-radius:10px;object-fit:cover;flex-shrink:0;background:var(--line);}
+.gk-admin-card-body{flex:1;min-width:0;font-size:13px;}
+.gk-admin-note{font-size:12px;color:#6b7a6d;margin-top:2px;}
+.gk-admin-geo{display:inline-block;font-size:11.5px;color:var(--forest);margin-top:6px;text-decoration:none;font-weight:700;}
+.gk-admin-actions{display:flex;gap:8px;margin-top:10px;}
+.gk-admin-btn{border:none;border-radius:10px;padding:8px 12px;font-size:12px;font-weight:800;display:flex;align-items:center;gap:5px;cursor:pointer;}
+.gk-admin-btn.approve{background:rgba(76,154,91,.15);color:#2f6b3c;}
+.gk-admin-btn.reject{background:rgba(224,72,58,.15);color:#c23a2e;}
+.gk-admin-user-row{display:flex;align-items:center;justify-content:space-between;gap:10px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px;font-size:13px;}
+.gk-admin-denied{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;font-family:'Cairo',sans-serif;color:var(--forest);text-align:center;padding:20px;}
+.gk-admin-uid code{background:var(--line);padding:2px 8px;border-radius:6px;font-size:12px;}

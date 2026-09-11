@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import {
   Leaf, TreePine, Trophy, Camera, Video, MapPin, X, Radio, Flame, Users, ChevronLeft, Square,
+  UserCircle, Map as MapIcon, LogOut, Ban,
 } from "lucide-react";
 import { onAuthStateChanged, signInAnonymously } from "firebase/auth";
 import {
@@ -11,6 +13,11 @@ import { auth, db } from "../lib/firebase";
 import {
   WILAYAS, getBadge, nextBadge, timeAgo, compressImage, youtubeEmbed, isFacebook,
 } from "../lib/constants";
+import { checkPlantingPhoto } from "../lib/moderation";
+import { registerWithEmail, loginWithEmail, resetPassword, logout, isRealAccount } from "../lib/auth";
+import { getCurrentLocation, findDuplicateLocation } from "../lib/geo";
+
+const TreeMap = dynamic(() => import("../components/TreeMap"), { ssr: false });
 
 const TARGET_TREES = 1000;
 const LIVE_WINDOW_MS = 4 * 60 * 60 * 1000;
@@ -27,6 +34,8 @@ export default function Home() {
   const [showOnboard, setShowOnboard] = useState(false);
   const [showPlant, setShowPlant] = useState(false);
   const [showLiveForm, setShowLiveForm] = useState(false);
+  const [showAccount, setShowAccount] = useState(false);
+  const [authUser, setAuthUser] = useState(null);
   const [toast, setToast] = useState(null);
   const notify = (m) => { setToast(m); setTimeout(() => setToast(null), 2800); };
 
@@ -38,6 +47,7 @@ export default function Home() {
         return;
       }
       setUid(user.uid);
+      setAuthUser(user);
       setAuthReady(true);
     });
     return unsub;
@@ -92,16 +102,23 @@ export default function Home() {
     } catch { notify("تعذّر إنشاء الحساب، تحقق من اتصالك"); }
   }
 
-  async function submitPlanting(photo, note) {
+  async function submitPlanting(photo, note, needsReview, geo) {
     if (!uid || !profile || !photo) return;
+    if (profile.banned) { notify("⛔ حسابك محظور من إضافة غرسات جديدة"); return; }
     try {
       await addDoc(collection(db, "plantings"), {
         userId: uid, name: profile.name, wilaya: profile.wilaya,
         photo, note: note || "", ts: Date.now(), points: 50,
+        moderationStatus: needsReview ? "pending_review" : "approved",
+        ...(geo ? { geo } : {}),
       });
       await updateDoc(doc(db, "users", uid), { points: increment(50), trees: increment(1) });
       setShowPlant(false);
-      notify("+50 نقطة! شجرتك سُجّلت في السجل الوطني 🌳");
+      notify(
+        needsReview
+          ? "تم إرسال الصورة، وهي بانتظار مراجعة سريعة قبل احتسابها نهائيًا 🕓"
+          : "+50 نقطة! شجرتك سُجّلت في السجل الوطني 🌳"
+      );
     } catch { notify("تعذّر الحفظ، تحقق من اتصالك بالإنترنت"); }
   }
 
@@ -137,12 +154,19 @@ export default function Home() {
   const myBadge = getBadge(myPoints);
   const nb = nextBadge(myPoints);
   const isLiveMine = uid && live.some((s) => s.id === uid);
+  const myPlantings = uid ? feed.filter((f) => f.userId === uid) : [];
+  const mappablePlantings = feed.filter((f) => f.geo && f.moderationStatus !== "pending_review");
 
   return (
     <div className="gk-root">
       <div className="gk-header">
         <div className="gk-brand"><Leaf size={20} /> الجزائر الخضراء</div>
-        {profile && <div className="gk-chip"><Trophy size={14} /> {myPoints} نقطة</div>}
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {profile && <div className="gk-chip"><Trophy size={14} /> {myPoints} نقطة</div>}
+          <button className="gk-account-btn" onClick={() => setShowAccount(true)} aria-label="حسابي">
+            <UserCircle size={22} />
+          </button>
+        </div>
       </div>
 
       <div className="gk-hero">
@@ -150,9 +174,13 @@ export default function Home() {
         <h1>كل شجرة تغرسها، تراها كل الجزائر</h1>
         <p>صوّر غرستك، اجمع النقاط، وتنافس مع كل الولايات في تحدٍ وطني واحد.</p>
         <div className="gk-count"><small>مجموع الأشجار المسجّلة</small><br />{totalTrees}</div>
-        <button className="gk-cta" onClick={() => (profile ? setShowPlant(true) : setShowOnboard(true))}>
-          <Camera size={18} /> ازرع وسجّل شجرتك الآن
-        </button>
+        {profile && profile.banned ? (
+          <div className="gk-banned-notice"><Ban size={16} /> حسابك محظور حالياً من إضافة غرسات جديدة</div>
+        ) : (
+          <button className="gk-cta" onClick={() => (profile ? setShowPlant(true) : setShowOnboard(true))}>
+            <Camera size={18} /> ازرع وسجّل شجرتك الآن
+          </button>
+        )}
       </div>
 
       {tab === "home" && (
@@ -234,6 +262,19 @@ export default function Home() {
         </div>
       )}
 
+      {tab === "map" && (
+        <div className="gk-section">
+          <h2><MapIcon size={16} /> خريطة الأشجار</h2>
+          <p style={{ fontSize: 12.5, color: "#5a655c", marginTop: -6, marginBottom: 14 }}>
+            كل نقطة على الخريطة هي شجرة حقيقية سُجّلت بموقع GPS فعلي (الصور بانتظار المراجعة لا تظهر هنا بعد).
+          </p>
+          <TreeMap points={mappablePlantings} />
+          <div style={{ fontSize: 11.5, color: "#8a9587", marginTop: 8 }}>
+            {mappablePlantings.length} شجرة موثّقة بالموقع من أصل {feed.length} مسجّلة
+          </div>
+        </div>
+      )}
+
       {tab === "live" && (
         <div className="gk-section">
           <h2><Radio size={16} color="#e0483a" /> البث المباشر</h2>
@@ -259,8 +300,11 @@ export default function Home() {
       <div className="gk-tabs">
         <TabBtn active={tab === "home"} onClick={() => setTab("home")} icon={<Leaf size={18} />} label="الرئيسية" />
         <TabBtn active={tab === "board"} onClick={() => setTab("board")} icon={<Trophy size={18} />} label="الترتيب" />
+        <TabBtn active={tab === "map"} onClick={() => setTab("map")} icon={<MapIcon size={18} />} label="الخريطة" />
         <TabBtn active={tab === "live"} onClick={() => setTab("live")} icon={<Radio size={18} />} label="البث المباشر" />
       </div>
+
+      <div className="gk-credit">تصميم: Koulaibi Badreddine</div>
 
       {showOnboard && <OnboardModal onSubmit={createProfile} />}
 
@@ -268,6 +312,17 @@ export default function Home() {
         <PlantModal
           onClose={() => setShowPlant(false)}
           onSubmit={submitPlanting}
+          notify={notify}
+          myPlantings={myPlantings}
+        />
+      )}
+
+      {showAccount && (
+        <AccountModal
+          onClose={() => setShowAccount(false)}
+          authUser={authUser}
+          profile={profile}
+          notify={notify}
         />
       )}
 
@@ -341,30 +396,102 @@ function LiveForm({ onSubmit }) {
   );
 }
 
-function PlantModal({ onClose, onSubmit }) {
+function PlantModal({ onClose, onSubmit, notify, myPlantings }) {
   const [photo, setPhoto] = useState(null);
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
+  const [checking, setChecking] = useState(false);
+  const [needsReview, setNeedsReview] = useState(false);
+  const [geo, setGeo] = useState(null);
+  const [geoStatus, setGeoStatus] = useState("idle"); // idle | loading | ok | error | duplicate
   const fileRef = useRef(null);
+
+  // نطلب الموقع فور فتح النافذة — لتوثيق مكان الغرسة فعلياً ومنع تكرار نفس النقطة
+  useEffect(() => {
+    let cancelled = false;
+    setGeoStatus("loading");
+    getCurrentLocation()
+      .then((loc) => {
+        if (cancelled) return;
+        const dup = findDuplicateLocation(loc, myPlantings || []);
+        if (dup) {
+          setGeoStatus("duplicate");
+          setGeo(null);
+        } else {
+          setGeo(loc);
+          setGeoStatus("ok");
+        }
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        setGeoStatus("error");
+        notify && notify(e.message);
+      });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function handleFile(e) {
     const file = e.target.files && e.target.files[0];
+    e.target.value = ""; // يسمح باختيار نفس الملف مرة ثانية لو رُفض
     if (!file) return;
-    try { setPhoto(await compressImage(file)); } catch { /* ignore */ }
+
+    setChecking(true);
+    setPhoto(null);
+    setNeedsReview(false);
+    try {
+      const dataUrl = await compressImage(file);
+      const result = await checkPlantingPhoto(dataUrl);
+
+      if (result.blocked) {
+        // الصورة تُرفض فورًا ولا تُعرض ولا تُحفظ — الكاميرا/المعاينة تُغلق مباشرة
+        notify && notify("⛔ هذه الصورة غير لائقة ولا يمكن قبولها هنا");
+        setChecking(false);
+        return;
+      }
+
+      setPhoto(dataUrl);
+      setNeedsReview(result.needsReview);
+      if (result.needsReview) {
+        notify && notify("لم نتأكد أن الصورة لشجرة/نبتة — ستُرسَل للمراجعة قبل احتساب النقاط");
+      }
+    } catch {
+      // فشل الفحص نفسه (مثلاً تعذّر تحميل النموذج) — نسمح بالمتابعة كمراجعة يدوية بدل حجب المستخدم بالكامل
+      try {
+        const dataUrl = await compressImage(file);
+        setPhoto(dataUrl);
+        setNeedsReview(true);
+      } catch { /* ignore */ }
+    }
+    setChecking(false);
   }
 
   async function submit() {
     setSaving(true);
-    await onSubmit(photo, note);
+    await onSubmit(photo, note, needsReview, geo);
     setSaving(false);
   }
+
+  const geoBlocked = geoStatus === "duplicate";
 
   return (
     <div className="gk-modal-wrap">
       <div className="gk-modal">
         <button className="gk-close" onClick={onClose}><X size={16} /></button>
         <h3>🌳 سجّل غرستك</h3>
-        {!photo ? (
+
+        <div className={"gk-geo-status " + geoStatus}>
+          {geoStatus === "loading" && <>📍 جارٍ تحديد موقعك...</>}
+          {geoStatus === "ok" && <>📍 تم توثيق موقع الغرسة بنجاح</>}
+          {geoStatus === "error" && <>⚠️ لم نتمكن من تحديد موقعك — يمكنك المتابعة لكن الغرسة لن تظهر على الخريطة</>}
+          {geoStatus === "duplicate" && <>⛔ يبدو أنك سجّلت غرسة من نفس هذا المكان بالضبط من قبل</>}
+        </div>
+
+        {checking ? (
+          <div className="gk-camera-box">
+            <div>جارٍ فحص الصورة...</div>
+          </div>
+        ) : !photo ? (
           <div className="gk-camera-box" onClick={() => fileRef.current && fileRef.current.click()}>
             <Camera size={28} style={{ marginBottom: 8 }} />
             <div>اضغط لالتقاط صورة الشجرة</div>
@@ -372,19 +499,169 @@ function PlantModal({ onClose, onSubmit }) {
         ) : (
           <img src={photo} className="gk-photo-preview" alt="معاينة" />
         )}
-        <input ref={fileRef} type="file" accept="image/*" capture="environment" style={{ display: "none" }} onChange={handleFile} />
-        {photo && (
+
+        <input
+          ref={fileRef} type="file" accept="image/*" capture="environment"
+          style={{ display: "none" }} onChange={handleFile} disabled={checking}
+        />
+
+        {photo && !checking && (
           <button className="gk-btn ghost" style={{ marginBottom: 12 }} onClick={() => { setPhoto(null); fileRef.current && fileRef.current.click(); }}>
             تغيير الصورة
           </button>
         )}
+
+        {needsReview && photo && (
+          <div style={{ fontSize: 12, color: "#a3762b", marginBottom: 10 }}>
+            🕓 هذه الصورة ستُحفظ لكن بانتظار مراجعة قبل احتساب نقاطها نهائيًا.
+          </div>
+        )}
+
         <div className="gk-field">
           <label>أين غرستها؟ (اختياري)</label>
           <textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="مثال: حديقة الحي، بسكرة" />
         </div>
-        <button className="gk-btn" disabled={!photo || saving} onClick={submit}>
+        <button className="gk-btn" disabled={!photo || saving || checking || geoBlocked} onClick={submit}>
           {saving ? "جارٍ الحفظ..." : "إرسال والحصول على 50 نقطة"}
         </button>
+      </div>
+    </div>
+  );
+}
+
+function AccountModal({ onClose, authUser, profile, notify }) {
+  const [mode, setMode] = useState("view"); // view | register | login
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const linked = isRealAccount(authUser);
+
+  async function handleRegister() {
+    if (!email.trim() || password.length < 6) {
+      notify && notify("أدخل بريداً صحيحاً وكلمة مرور 6 أحرف على الأقل");
+      return;
+    }
+    setBusy(true);
+    const res = await registerWithEmail(email.trim(), password, name.trim() || undefined);
+    setBusy(false);
+    if (res.ok) {
+      notify && notify("تم إنشاء حسابك الحقيقي 🎉 نقاطك وأشجارك محفوظة");
+      setMode("view");
+    } else {
+      notify && notify(res.error);
+    }
+  }
+
+  async function handleLogin() {
+    if (!email.trim() || !password) {
+      notify && notify("أدخل البريد وكلمة المرور");
+      return;
+    }
+    setBusy(true);
+    const res = await loginWithEmail(email.trim(), password);
+    setBusy(false);
+    if (res.ok) {
+      notify && notify("تم تسجيل الدخول");
+      onClose();
+    } else {
+      notify && notify(res.error);
+    }
+  }
+
+  async function handleReset() {
+    if (!email.trim()) { notify && notify("أدخل بريدك أولاً"); return; }
+    const res = await resetPassword(email.trim());
+    notify && notify(res.ok ? "أُرسل رابط استعادة كلمة المرور إلى بريدك" : res.error);
+  }
+
+  async function handleLogout() {
+    await logout();
+    notify && notify("تم تسجيل الخروج");
+    onClose();
+  }
+
+  return (
+    <div className="gk-modal-wrap">
+      <div className="gk-modal">
+        <button className="gk-close" onClick={onClose}><X size={16} /></button>
+        <h3><UserCircle size={20} style={{ verticalAlign: "-4px" }} /> حسابي</h3>
+
+        {mode === "view" && (
+          <>
+            {profile && (
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontWeight: 800, fontSize: 15 }}>{profile.name}</div>
+                <div style={{ fontSize: 12, color: "#6b7a6d" }}>{profile.wilaya} — {profile.points || 0} نقطة — {profile.trees || 0} شجرة</div>
+              </div>
+            )}
+
+            {linked ? (
+              <>
+                <div className="gk-geo-status ok" style={{ marginBottom: 16 }}>
+                  ✅ حسابك حقيقي ومرتبط بالبريد: {authUser.email}
+                </div>
+                <button className="gk-btn ghost" onClick={handleLogout}>
+                  <LogOut size={15} style={{ display: "inline", verticalAlign: "-2px", marginLeft: 6 }} /> تسجيل الخروج
+                </button>
+              </>
+            ) : (
+              <>
+                <div className="gk-geo-status error" style={{ marginBottom: 16 }}>
+                  ⚠️ حسابك حالياً مجهول ومرتبط بهذا الجهاز فقط. سجّل ببريد إلكتروني حتى لا تفقد نقاطك لو غيّرت الهاتف.
+                </div>
+                <button className="gk-btn" style={{ marginBottom: 10 }} onClick={() => setMode("register")}>
+                  إنشاء حساب حقيقي (احتفظ بنقاطي)
+                </button>
+                <button className="gk-btn ghost" onClick={() => setMode("login")}>
+                  عندي حساب من قبل — تسجيل الدخول
+                </button>
+              </>
+            )}
+          </>
+        )}
+
+        {mode === "register" && (
+          <>
+            <p style={{ fontSize: 12.5, color: "#5a655c", marginTop: -8, marginBottom: 14 }}>
+              هذا سيربط حسابك الحالي (بنقاطه وأشجاره) ببريد وكلمة مرور — بدون أي فقدان لبياناتك.
+            </p>
+            <div className="gk-field">
+              <label>الاسم (اختياري)</label>
+              <input value={name} onChange={(e) => setName(e.target.value)} placeholder="اسمك" />
+            </div>
+            <div className="gk-field">
+              <label>البريد الإلكتروني</label>
+              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="example@mail.com" />
+            </div>
+            <div className="gk-field">
+              <label>كلمة المرور</label>
+              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="6 أحرف على الأقل" />
+            </div>
+            <button className="gk-btn" disabled={busy} onClick={handleRegister}>
+              {busy ? "جارٍ الإنشاء..." : "إنشاء الحساب"}
+            </button>
+            <button className="gk-btn ghost" style={{ marginTop: 10 }} onClick={() => setMode("view")}>رجوع</button>
+          </>
+        )}
+
+        {mode === "login" && (
+          <>
+            <div className="gk-field">
+              <label>البريد الإلكتروني</label>
+              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="example@mail.com" />
+            </div>
+            <div className="gk-field">
+              <label>كلمة المرور</label>
+              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="كلمة المرور" />
+            </div>
+            <button className="gk-btn" disabled={busy} onClick={handleLogin}>
+              {busy ? "جارٍ الدخول..." : "تسجيل الدخول"}
+            </button>
+            <button className="gk-btn ghost" style={{ marginTop: 10 }} onClick={handleReset}>نسيت كلمة المرور؟</button>
+            <button className="gk-btn ghost" style={{ marginTop: 10 }} onClick={() => setMode("view")}>رجوع</button>
+          </>
+        )}
       </div>
     </div>
   );
@@ -393,30 +670,13 @@ function PlantModal({ onClose, onSubmit }) {
 function OnboardModal({ onSubmit }) {
   const [name, setName] = useState("");
   const [wilaya, setWilaya] = useState("بسكرة");
-  const nameRef = useRef(null);
-
-  // بعض المتصفحات تملأ الحقل تلقائياً (Autofill) دون إطلاق onChange،
-  // فيبقى state فارغاً رغم ظهور نص في الحقل. نقرأ القيمة الحقيقية من DOM كخط دفاع إضافي.
-  function handleJoin() {
-    const liveValue = (nameRef.current ? nameRef.current.value : "") || name;
-    const finalName = liveValue.trim();
-    if (!finalName) return;
-    onSubmit(finalName, wilaya);
-  }
-
   return (
     <div className="gk-modal-wrap">
       <div className="gk-modal">
         <h3>🌱 مرحباً بك في الجزائر الخضراء</h3>
         <div className="gk-field">
           <label>اسمك</label>
-          <input
-            ref={nameRef}
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            onInput={(e) => setName(e.target.value)}
-            placeholder="مثال: أمين"
-          />
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="مثال: أمين" />
         </div>
         <div className="gk-field">
           <label>ولايتك</label>
@@ -424,7 +684,7 @@ function OnboardModal({ onSubmit }) {
             {WILAYAS.map((w) => <option key={w} value={w}>{w}</option>)}
           </select>
         </div>
-        <button className="gk-btn" onClick={handleJoin}>
+        <button className="gk-btn" disabled={!name.trim()} onClick={() => onSubmit(name.trim(), wilaya)}>
           انضم للتحدي <ChevronLeft size={14} style={{ display: "inline", verticalAlign: "-2px" }} />
         </button>
       </div>
