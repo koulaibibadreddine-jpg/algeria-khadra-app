@@ -1,0 +1,29 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ملف كل مستخدم: يقرأه الجميع (لأجل الترتيب)، لكن لا يعدّله إلا صاحبه
+    match /users/{userId} {
+      allow read: if true;
+      allow create: if request.auth != null && request.auth.uid == userId;
+      allow update: if request.auth != null && request.auth.uid == userId;
+      allow delete: if false;
+    }
+
+    // كل الغرسات: يقرأها الجميع، وينشئها فقط صاحب الحساب باسمه، ولا تُعدَّل بعد الإرسال
+    match /plantings/{id} {
+      allow read: if true;
+      allow create: if request.auth != null
+                     && request.resource.data.userId == request.auth.uid
+                     && request.resource.data.points is int
+                     && request.resource.data.points <= 50;
+      allow update, delete: if false;
+    }
+
+    // جلسات البث المباشر: يقرأها الجميع، ويتحكم فيها صاحبها فقط
+    match /liveSessions/{userId} {
+      allow read: if true;
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+  }
+}
